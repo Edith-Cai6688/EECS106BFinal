@@ -1,0 +1,98 @@
+<?xml version="1.0"?>
+<mujoco model="Indy7">
+
+    <compiler angle="radian" eulerseq="xyz"/>
+
+    <asset>
+        <mesh name="Indy7_0" file="./meshes/Indy7_0.stl"/>
+        <mesh name="Indy7_1" file="./meshes/Indy7_1.stl"/>
+        <mesh name="Indy7_2" file="./meshes/Indy7_2.stl"/>
+        <mesh name="Indy7_3" file="./meshes/Indy7_3.stl"/>
+        <mesh name="Indy7_4" file="./meshes/Indy7_4.stl"/>
+        <mesh name="Indy7_5" file="./meshes/Indy7_5.stl"/>
+        <mesh name="Indy7_6" file="./meshes/Indy7_6.stl"/>
+    </asset>
+
+    <worldbody>
+        <body name="base" pos="0 0 0">
+            <body name="link0" pos="0 0 0" euler = "0 0 0">
+                <site name="right_center" pos="0 0 0" size="0.01" rgba="1 0.3 0.3 1" group="2"/>
+                <inertial pos="0.001045240000000 -0.000003790000000 -0.015046150000000" mass="1.59306955" fullinertia="+0.00572623 +0.00558959 +0.00966674 +0.00000251 -0.00011380 -0.00000014" />
+                <geom type="mesh" mesh="Indy7_0" contype="0" conaffinity="0" group="0" rgba = "1 1 1 1" name="link0_collision"/>
+                <geom type="mesh" mesh="Indy7_0" contype="0" conaffinity="0" group="1" rgba = "0.584 0.584 0.584 1" name="link0_visual"/> 
+
+                <body name="link1" pos="0 0 0.0775" euler = "0 0 0"> 
+                    <inertial pos="0 -0.0473238 0.193496" quat="0.646983 -0.156312 0.175179 0.72546" mass="11.803" diaginertia="0.154273 0.154184 0.0347425"/>
+                    <joint name="Actuator1" range="-6.28 6.28" damping="0.001" frictionloss="0.01"/>
+                    <geom type="mesh" mesh="Indy7_1" rgba = "1 1 1 1" group="0" name = "link1_collision"/> 
+                    <geom type="mesh" mesh="Indy7_1" rgba = "0.737 0.737 0.768 1" group="1" name = "link1_visual"/> 
+
+                    <body name="link2" pos="0 -0.109 0.222" quat="0.5 0.5 0.5 -0.5">  <!--quat="-0.5 -0.5 0.5 0.5"-->
+                        <inertial pos="-0.252661 6.01e-06 0.0594623" quat="0.535651 0.461652 0.461734 0.535497" mass="7.99292" diaginertia="0.29363 0.286497 0.0306505"/>
+                        <joint name="Actuator2" range="-6.28 6.28" damping="0.001" frictionloss="0.01"/>
+                        <geom type="mesh" mesh="Indy7_2" rgba = "1 1 1 1" group="0" name="link2_collision"/>
+                        <geom type="mesh" mesh="Indy7_2" rgba = "0.737 0.737 0.768 1" group="1" name="link2_visual"/>
+
+                        <body name="link3" pos="-0.45 0 -0.0305" euler = "0 0 0"> <!--quat="-0.5 -0.5 0.5 0.5"-->
+                            <inertial pos="-0.151721 4.441e-05 -0.073199" quat="0.490517 0.508363 -0.522312 -0.477652" mass="2.99134" diaginertia="0.0342713 0.0342015 0.0043907"/>
+                            <joint name="Actuator3" range="-6.28 6.28" damping="0.001" frictionloss="0.01"/>
+                            <geom type="mesh" mesh="Indy7_3" rgba = "1 1 1 1" group="0" name="link3_collision"/>
+                            <geom type="mesh" mesh="Indy7_3" rgba = "0.737 0.737 0.768 1" group="1" name="link3_visual"/>
+
+                            <body name="link4" pos="-0.267 0 -0.075" quat="0.5 -0.5 -0.5 0.5">
+                                <inertial pos="6.946e-05 -0.0722404 0.0745651" quat="0.584096 0.811684 -0.000311929 0.00081235" mass="2.12317" diaginertia="0.00672334 0.00662338 0.00236249"/>
+                                <joint name="Actuator4" range="-6.28 6.28" damping="0.001" frictionloss="0.01"/>
+                                <geom type="mesh" mesh="Indy7_4" rgba = "1 1 1 1" group="0" name="link4_collision"/>
+                                <geom type="mesh" mesh="Indy7_4" rgba = "0.737 0.737 0.768 1" group="1" name = "link4_visual"/>
+
+                                <body name="link5" pos="0 -0.114 0.083" quat="0.5 0.5 0.5 -0.5"> 
+                                    <inertial pos="-0.0928619 6.474e-05 0.0657795" quat="0.464788 0.53361 0.528902 0.468503" mass="2.28865" diaginertia="0.00996598 0.00992026 0.00259951"/>
+                                    <joint name="Actuator5" range="-6.28 6.28" damping="0.001" frictionloss="0.01"/>
+                                    <geom type="mesh" mesh="Indy7_5" rgba = "1 1 1 1" group="0" name="link5_collision"/>
+                                    <geom type="mesh" mesh="Indy7_5" rgba = "0.737 0.737 0.768 1" group="1" name = "link5_visual"/>
+
+                                    <body name="link6" pos="-0.168 0 0.069" quat="0.5 -0.5 -0.5 0.5" >
+                                        <inertial pos="0 -0.00048743 0.0306234" quat="0.00572522 0.707041 -0.00333531 0.707142" mass="0.400839" diaginertia="0.000596342 0.00044549 0.000435338"/>
+                                        <joint name="Actuator6" range="-6.28 6.28" damping="0.001" frictionloss="0.01"/>
+                                        <geom type="mesh" mesh="Indy7_6" rgba = "1 1 1 1" group="0" name="link6_collision"/>
+                                        <geom type="mesh" mesh="Indy7_6" rgba = "0.737 0.737 0.768 1" group="1" name = "link6_visual"/>
+
+                                        <!-- <body name="last_link" pos="0.0 0 0.06" euler = "0 -0 0" >
+                                            <inertial pos="0 -0.00048743 0.0306234" quat="0.00572522 0.707041 -0.00333531 0.707142" mass="1e-9" diaginertia="0.0 0.0 0.0"/> 
+                                            <site name="ft_sensor" type="cylinder" size="0.045 0.01" pos="-0.0 0 0.01" euler="0 0 0" rgba="1 0 0 0.00"/>
+                                        </body> -->
+
+                                        <body name="right_hand" pos="0 0 0.06" euler = "0 0 0">
+                                        <!-- This camera points out from the eef. -->
+                                            <camera mode="fixed" name="eye_in_hand" pos="0.0 0.10 0.04" euler = "-2.880 0 0" fovy="75"/>
+                                            <camera mode="fixed" name="eye_in_hand_back" pos="0.0 -0.10 0.04" euler = "2.880 0 0" fovy="75"/>
+                                        <!-- To add gripper -->
+                                        </body>        
+                                    </body>
+                                </body>
+                            </body> 
+                        </body>
+                    </body>
+                </body>
+            </body>
+        </body>
+
+    </worldbody>
+
+    <actuator>
+        <!-- Physical limits of the actuator. -->
+        <motor joint="Actuator1" ctrllimited="true" ctrlrange="-800 800" name ="torq_j1"/>
+        <motor joint="Actuator2" ctrllimited="true" ctrlrange="-800 800" name ="torq_j2"/>
+        <motor joint="Actuator3" ctrllimited="true" ctrlrange="-800 800" name ="torq_j3"/>
+        <motor joint="Actuator4" ctrllimited="true" ctrlrange="-750 750" name ="torq_j4"/>
+        <motor joint="Actuator5" ctrllimited="true" ctrlrange="-700 700" name ="torq_j5"/>
+        <motor joint="Actuator6" ctrllimited="true" ctrlrange="-700 700" name ="torq_j6"/>
+    </actuator>
+
+    <!-- <sensor>
+        <framepos objtype="site" objname="ft_sensor"/>
+        <force name="force_sensor" site="ft_sensor"/>
+        <torque name="torque_sensor" site="ft_sensor"/>
+    </sensor> -->
+
+</mujoco>
