@@ -1,60 +1,49 @@
-import time
-
-import numpy as np
-import matplotlib.pyplot as plt
-
-import robosuite
+import robosuite as suite
 from robosuite.controllers import load_composite_controller_config
+# from robosuite.wrappers import GymWrapper
+import numpy as np
+import time
 from pathlib import Path
-root_folder = Path(__file__).parent.parent
 from scipy.spatial.transform import Rotation as R
-from robosuite_models.robots import indy7_robot
+root_folder = Path(__file__).parent.parent
 
 
-robot_name = "Indy7"
-
-# create controller
+# # create controller
+robot_name = "Sawyer"
 controller_path = root_folder/"scripts"/"indy7_absolute_pose.json"
 controller_config = load_composite_controller_config(robot = robot_name, controller=str(controller_path))
-# print(controller_config)
+# # print(controller_config)
 
-env = robosuite.make(
-    "StackCustom",
-    robots=[robot_name],
-    controller_configs=controller_config,   # arms controlled via OSC, other parts via JOINT_POSITION/JOINT_VELOCITY
-    has_renderer=True,                      # on-screen rendering
-    render_camera=None,                     # visualize the "frontview" camera
-    has_offscreen_renderer=True,            # no off-screen rendering
-    control_freq=20,                        # 20 hz control for applied actions
-    horizon=600,                            # each episode terminates after 200 steps
-    use_object_obs=False,                   # no observations needed
-    use_camera_obs=True,
-    camera_depths=True,
-    camera_segmentations="instance",
-    camera_names= ["agentview", "robot0_eye_in_hand"],
-
+# 创建 Sawyer + Stack 环境
+env = suite.make(
+    env_name="Stack",                   # 任务类型：Stacking
+    robots="Sawyer",                    # 使用 Sawyer 机械臂
+    controller_configs=controller_config,
+    has_renderer=True,                  # 实时渲染
+    has_offscreen_renderer=True,       # 不保存图像帧
+    use_camera_obs=False,               # 暂不使用图像观察
+    control_freq=20,                    # 控制频率
+    horizon=600,                        # 每条 trajectory 长度
+    render_camera=None,          # 渲染视角
 )
-# reset the environment
-env.reset()
 
-"""
-possible body names:
-'world', 'table', 'left_eef_target', 'right_eef_target', 
-'robot0_base', 'robot0_link0', 'robot0_link1', 'robot0_link2', 'robot0_link3', 'robot0_link4', 'robot0_link5', 'robot0_link6', 'robot0_link7', 
-'robot0_right_hand', 'gripper0_right_right_gripper', 'gripper0_right_eef', 'gripper0_right_leftfinger', 'gripper0_right_finger_joint1_tip', 
-'gripper0_right_rightfinger', 'gripper0_right_finger_joint2_tip', 'fixed_mount0_base', 'fixed_mount0_controller_box', 
-'fixed_mount0_pedestal_feet', 'fixed_mount0_torso', 'fixed_mount0_pedestal', 'cubeA_main', 'cubeB_main'
-"""
-# cubeA_main_id = env.sim.model.body_name2id("cubeA_main")
-# pos_cubeA = env.sim.data.body_xpos[cubeA_main_id]
-# print("Cube A position: ", pos_cubeA)
-# rotm_cubeA = env.sim.data.body_xmat[cubeA_main_id].reshape((3,3)) # rotation matrix
-# quat_cubeA = env.sim.data.body_xquat[cubeA_main_id] # quaternion in wxyz format
-# rotm_from_quat_cubeA = R.from_quat(quat_cubeA, scalar_first = True).as_matrix() # rotation matrix from quaternion
+# 重置环境
+# env = GymWrapper(env)
+obs = env.reset()
 
-# print("confirm both are the same:", rotm_cubeA, rotm_from_quat_cubeA)
-
-# print(env.action_spec[0].shape)
+""" Objects in environment: ('world', 'table', 'left_eef_target', 'right_eef_target', 
+                         'robot0_base', 'robot0_right_arm_base_link', 'robot0_right_l0', 
+                         'robot0_head', 'robot0_screen', 'robot0_head_camera', 
+                         'robot0_right_torso_itb', 'robot0_right_l1', 'robot0_right_l2', 
+                         'robot0_right_l3', 'robot0_right_l4', 'robot0_right_arm_itb', 
+                         'robot0_right_l5', 'robot0_right_hand_camera', 'robot0_right_wrist', 
+                         'robot0_right_l6', 'robot0_right_hand', 'gripper0_right_gripper_base', 
+                         'gripper0_right_eef', 'gripper0_right_l_finger',
+                           'gripper0_right_l_finger_tip', 'gripper0_right_r_finger', 
+                           'gripper0_right_r_finger_tip', 'robot0_right_l4_2', 'robot0_right_l2_2', 
+                           'robot0_right_l1_2', 'fixed_mount0_base', 'fixed_mount0_controller_box', 
+                           'fixed_mount0_pedestal_feet', 'fixed_mount0_torso', 'fixed_mount0_pedestal', 
+                           'cubeA_main', 'cubeB_main') """
 
 # === basic body IDs and variances
 cubeA_main_id = env.sim.model.body_name2id("cubeA_main")
@@ -65,8 +54,12 @@ base_id = env.sim.model.body_name2id('robot0_base')
 pos_base = env.sim.data.body_xpos[base_id]
 rot_base = env.sim.data.body_xmat[base_id].reshape(3, 3)
 pos_cubeA = env.sim.data.body_xpos[cubeA_main_id]
+print("actual cube A is in ", pos_cubeA)
 pos_cubeB = env.sim.data.body_xpos[cubeB_main_id]
+print("actual cube B is in ", pos_cubeB)
+pos_eef = env.sim.data.body_xpos[eef_id]
 rot_cubeA = env.sim.data.body_xmat[cubeA_main_id].reshape(3, 3)
+
 
 action = np.zeros(env.action_spec[0].shape[0])
 APPROACH_DISTANCE = 0.1
@@ -189,12 +182,15 @@ def move_to_target(body_id, steps, rotm_basic, height_offset = 0, gripper = -1):
         pos[2] += height_offset
 
         if (has_reached_target(pos,rotm) != 1):
-            noisy_pos, noisy_rot = add_noise(pos, R.from_matrix(rotm).as_rotvec())
-            action[0:3] = noisy_pos
-            action[3:6] = noisy_rot
-            # action[0:3] = pos
-            # action[3:6] = R.from_matrix(rotm).as_rotvec()
-            action[12] = gripper
+            # noisy_pos, noisy_rot = add_noise(pos, R.from_matrix(rotm).as_rotvec())
+            # action[0:3] = noisy_pos
+            # action[3:6] = noisy_rot
+            action[0:3] = pos
+            action[3:6] = R.from_matrix(rotm).as_rotvec()
+            action[6] = gripper
+            print("actual cube A is in ", pos_cubeA)
+            print("now eef is in ", env.sim.data.body_xpos[eef_id])
+            print("actual cube B is in ", pos_cubeB)
 
             obs, reward, done, info = env.step(action)
             env.render()
@@ -210,8 +206,8 @@ def move_to_target(body_id, steps, rotm_basic, height_offset = 0, gripper = -1):
             #         ax.axis('off')
             #     fig.suptitle(cam)
             # plt.show()
-            if is_robot_lost_control(noisy_pos, rotm):
-                raise Exception("Robot lost control!")
+            # if is_robot_lost_control(noisy_pos, rotm):
+            #     raise Exception("Robot lost control!")
 
             time.sleep(0.05)
         else:
@@ -243,6 +239,10 @@ def grasp(body_id, steps, rotm_basic, height_offset = 0, gripper = -1):
 # choose the grapper direction cubeA
 rotm_basic = get_rotm_basic_4A()
 
+# # 查看环境中的物体
+# print("Objects in environment:", env.sim.model.body_names)
+
+
 # move above cubeA
 move_to_target(cubeA_main_id, 100, rotm_basic, APPROACH_DISTANCE)
 
@@ -271,43 +271,10 @@ grasp(cubeB_main_id, 10, rotm_basic, GRASP_HEIGHT, gripper = -1)
 move_to_target(cubeB_main_id, 30, rotm_basic, APPROACH_DISTANCE, gripper = -1)
 
 
-
-# for i in range(200):
-#     if i < 60:
-#         action = np.zeros((env.action_spec[0].shape[0],))
-#         action[0:3] = np.array([0.3, 0.1, 0.0]) # Desired position to go in meter
-#         action[3:6] = R.from_matrix(rotm_basic).as_rotvec() # Desired orientation to go in rotation vector representation
-#         action[6] = -1
-#     elif i < 120:
-#         action = np.zeros((env.action_spec[0].shape[0],))
-#         action[0:3] = np.array([0.5, 0.1, 0.0])
-#         action[3:6] = R.from_matrix(rotm_basic).as_rotvec() # Desired orientation to go in rotation vector representation
-
-#     else:
-#         action = np.zeros((env.action_spec[0].shape[0],))
-#         action[0:3] = np.array([0.7, 0.1, 0.0])
-#         action[3:6] = R.from_matrix(rotm_basic).as_rotvec()
-#         action[6] = -1
-
-#     print(i, action[0:3])
-
-#     obs, reward, done, info = env.step(action)  # take action in the environment
-
-#     time.sleep(0.05)
-
-#     env.render()  # render on display
-#     if i == 0:
-#         for key in obs.keys():
-#             try:
-#                 print(key, obs[key].shape)
-#             except:
-#                 print(key, obs[key])
-#         time.sleep(3)
-
-# eef_quat = obs['robot0_eef_quat'] # quaternion in xyzw format
-# # if you want to convert it into the rotation matrix
-# eef_rotm = R.from_quat(eef_quat, scalar_first = False).as_matrix()
-
-# print(obs['robot0_eef_quat'])
-
-
+# # rollout 示例动作
+# for i in range(2000):
+#     action = env.action_space.sample()     # 随机动作，可替换为策略输出
+#     # obs, reward, done, info = env.step(action)
+#     result = env.step(action)
+#     print("Step result:", result)
+#     env.render()
