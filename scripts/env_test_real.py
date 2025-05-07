@@ -246,29 +246,29 @@ rotm_basic = get_rotm_basic_4A()
 # move above cubeA
 move_to_target(cubeA_main_id, 100, rotm_basic, APPROACH_DISTANCE)
 
-# move close to cubeA
-move_to_target(cubeA_main_id, 100, rotm_basic)
+# # move close to cubeA
+# move_to_target(cubeA_main_id, 100, rotm_basic)
 
-# grasp cubeA
-grasp(cubeA_main_id, 10, rotm_basic, gripper = 1)
+# # grasp cubeA
+# grasp(cubeA_main_id, 10, rotm_basic, gripper = 1)
 
-# move above cubeA
-move_to_target(cubeA_main_id, 20, rotm_basic, APPROACH_DISTANCE, gripper = 1)
+# # move above cubeA
+# move_to_target(cubeA_main_id, 20, rotm_basic, APPROACH_DISTANCE, gripper = 1)
 
-# choose the grapper direction for B
-rotm_basic = get_rotm_basic_4B()
+# # choose the grapper direction for B
+# rotm_basic = get_rotm_basic_4B()
 
-# move above cubeB
-move_to_target(cubeB_main_id, 100, rotm_basic, APPROACH_DISTANCE, gripper = 1)
+# # move above cubeB
+# move_to_target(cubeB_main_id, 100, rotm_basic, APPROACH_DISTANCE, gripper = 1)
 
-# move close to cubeB
-move_to_target(cubeB_main_id, 100, rotm_basic, GRASP_HEIGHT, gripper = 1)
+# # move close to cubeB
+# move_to_target(cubeB_main_id, 100, rotm_basic, GRASP_HEIGHT, gripper = 1)
 
-#drop cubeA
-grasp(cubeB_main_id, 10, rotm_basic, GRASP_HEIGHT, gripper = -1)
+# #drop cubeA
+# grasp(cubeB_main_id, 10, rotm_basic, GRASP_HEIGHT, gripper = -1)
 
-# move above
-move_to_target(cubeB_main_id, 30, rotm_basic, APPROACH_DISTANCE, gripper = -1)
+# # move above
+# move_to_target(cubeB_main_id, 30, rotm_basic, APPROACH_DISTANCE, gripper = -1)
 
 
 

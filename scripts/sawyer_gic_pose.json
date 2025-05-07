@@ -1,0 +1,23 @@
+{
+    "type": "BASIC",
+    "body_parts": {
+        "arms": {
+            "right": {
+                "type": "GIC_POSE",
+                "input_type": "absolute",
+                "control_freq": 20,
+                "kp": 350,
+                "damping_ratio": 1.0,
+                "position_limits": null,
+                "orientation_limits": null,
+                "uncouple_pos_ori": true,
+                "impedance_mode": "fixed",
+                "use_delta_commands": false,
+                "interpolation": null,
+                "gripper": {
+                  "type": "GRIP"
+                }
+              }
+        }
+    }
+}
