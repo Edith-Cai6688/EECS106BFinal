@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from scipy.spatial.transform import Rotation as R
 import inspect
+import os
+import matplotlib.pyplot as plt
 root_folder = Path(__file__).parent.parent
 
 
@@ -24,11 +26,18 @@ env = suite.make(
     controller_configs=controller_config,
     has_renderer=True,                  # 实时渲染
     has_offscreen_renderer=True,       # 不保存图像帧
-    use_camera_obs=False,               # 暂不使用图像观察
+    use_camera_obs=True,               # 暂不使用图像观察
+    camera_names=["agentview"],
+    camera_heights=256,
+    camera_widths=256,
     control_freq=20,                    # 控制频率
     horizon=600,                        # 每条 trajectory 长度
     render_camera=None,          # 渲染视角
 )
+
+pos_err_history = {"x": [], "y": [], "z": []}
+rot_err_history = []
+
 
 
 # 重置环境
@@ -184,7 +193,7 @@ def get_rotm_basic_4B():
     else:
         rotm_basic = np.array([
             [1, 0, 0],
-            [0, 1, 0],
+            [0, -1, 0],
             [0, 0, -1]
         ])
 
@@ -210,7 +219,8 @@ def is_robot_lost_control(target_pos, target_rotm, pos_threshold=3, rot_threshol
         return False
 
 
-def move_to_target(body_id, steps, rotm_basic, height_offset = 0, gripper = -1):
+def move_to_target(body_id, steps, rotm_basic, image_observations, actions_taken, height_offset = 0, gripper = -1):
+
     for i in range(steps):
         pos = get_pos(body_id)
         rotm = get_rot(body_id, rotm_basic)
@@ -228,7 +238,19 @@ def move_to_target(body_id, steps, rotm_basic, height_offset = 0, gripper = -1):
             print("actual cube B is in ", pos_cubeB)
 
             obs, reward, done, info = env.step(action)
+            image_observations.append(obs["agentview_image"])
+            actions_taken.append(action.copy())
             env.render()
+            # eef_pos = env.sim.data.body_xpos[eef_id] - pos_base
+            # eef_rot = env.sim.data.body_xmat[eef_id].reshape(3, 3)
+
+            # pos_error_vec = eef_pos - pos
+            # rot_error_vec = R.from_matrix(eef_rot.T @ rotm).magnitude()
+            # pos_err_history["x"].append(pos_error_vec[0])
+            # pos_err_history["y"].append(pos_error_vec[1])
+            # pos_err_history["z"].append(pos_error_vec[2])
+
+            # rot_err_history.append(rot_error_vec)
 
             # # Show the image, depth, segmentation
             # for cam in env.camera_names:
@@ -247,8 +269,9 @@ def move_to_target(body_id, steps, rotm_basic, height_offset = 0, gripper = -1):
             time.sleep(0.05)
         else:
             break
+    return image_observations, actions_taken
 
-def grasp(body_id, steps, rotm_basic, height_offset = 0, gripper = -1):
+def grasp(body_id, steps, rotm_basic, image_observations, actions_taken, height_offset = 0, gripper = -1):
     for i in range(steps):
         pos = get_pos(body_id)
         rotm = get_rot(body_id, rotm_basic)
@@ -259,57 +282,125 @@ def grasp(body_id, steps, rotm_basic, height_offset = 0, gripper = -1):
         action[6] = gripper
 
         obs, reward, done, info = env.step(action)
+        image_observations.append(obs["agentview_image"])
+        actions_taken.append(action.copy())
         env.render()
 
         
         time.sleep(0.05)
     
-        
-        
+def collect_multiple_image_trajectories(start_traj=4, end_traj=20, save_dir="./dataset/train"):
+    os.makedirs(save_dir, exist_ok=True)
+
+
+    for i in range(start_traj, end_traj):
+        image_observations = []
+        actions_taken = []
+        print(f"\n=== Collecting Trajectory {i} ===")
+
+        # Reset environment and get rot matrix
+        obs = env.reset()
+
+
+        # choose the grapper direction cubeA
+        rotm_basic = get_rotm_basic_4A()
+
+        # move above cubeA
+        move_to_target(cubeA_main_id, 200, rotm_basic, image_observations, actions_taken, APPROACH_DISTANCE)
+
+        # move close to cubeA
+        move_to_target(cubeA_main_id, 100, rotm_basic, image_observations, actions_taken)
+
+        # grasp cubeA
+        grasp(cubeA_main_id, 20, rotm_basic, image_observations, actions_taken, 0.0125,gripper = 1)
+
+        # move above cubeA
+        move_to_target(cubeA_main_id, 10, rotm_basic, image_observations, actions_taken, APPROACH_DISTANCE, gripper = 1)
+
+        # choose the grapper direction for B
+        rotm_basic = get_rotm_basic_4B()
+
+        # move above cubeB
+        move_to_target(cubeB_main_id, 100, rotm_basic, image_observations, actions_taken, APPROACH_DISTANCE, gripper = 1)
+
+        # move close to cubeB
+        move_to_target(cubeB_main_id, 100, rotm_basic, image_observations, actions_taken, GRASP_HEIGHT, gripper = 1)
+
+        #drop cubeA
+        grasp(cubeB_main_id, 20, rotm_basic, image_observations, actions_taken, GRASP_HEIGHT, gripper = -1)
+
+        # move above
+        move_to_target(cubeB_main_id, 30, rotm_basic, image_observations, actions_taken, APPROACH_DISTANCE, gripper = -1)
+
+        np.savez_compressed(os.path.join(save_dir, f"traj{i}.npz"), observations=np.array(image_observations), actions=np.array(actions_taken))
+        print(f"Saved: {save_dir}/traj{i}.npz")
+                
+collect_multiple_image_trajectories()
+
+# image_observations2, actions_taken2 = [], []
+# # === Move and Place Logical ===
+
+# # choose the grapper direction cubeA
+# rotm_basic = get_rotm_basic_4A()
+
+# # move above cubeA
+# move_to_target(cubeA_main_id, 200, rotm_basic, image_observations2, actions_taken2, APPROACH_DISTANCE)
+
+# # move close to cubeA
+# move_to_target(cubeA_main_id, 100, rotm_basic)
+
+# # grasp cubeA
+# grasp(cubeA_main_id, 20, rotm_basic, 0.02,gripper = 1)
+
+# # move above cubeA
+# move_to_target(cubeA_main_id, 20, rotm_basic, APPROACH_DISTANCE, gripper = 1)
+
+# # choose the grapper direction for B
+# rotm_basic = get_rotm_basic_4B()
+
+# # move above cubeB
+# move_to_target(cubeB_main_id, 100, rotm_basic, APPROACH_DISTANCE, gripper = 1)
+
+# # move close to cubeB
+# move_to_target(cubeB_main_id, 100, rotm_basic, GRASP_HEIGHT, gripper = 1)
+
+# #drop cubeA
+# grasp(cubeB_main_id, 20, rotm_basic, GRASP_HEIGHT, gripper = -1)
+
+# # move above
+# move_to_target(cubeB_main_id, 30, rotm_basic, APPROACH_DISTANCE, gripper = -1)
 
 
 
-# === Move and Place Logical ===
+# fig, axs = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
 
-# choose the grapper direction cubeA
-rotm_basic = get_rotm_basic_4A()
+# # Plot position errors
+# axs[0].plot(pos_err_history["x"], label="Position X")
+# axs[0].plot(pos_err_history["y"], label="Position Y")
+# axs[0].plot(pos_err_history["z"], label="Position Z")
+# axs[0].set_title("EEF Position Error Components")
+# axs[0].set_ylabel("Position Error (m)")
+# axs[0].legend()
+# axs[0].grid(True)
 
-# # 查看环境中的物体
-# print("Objects in environment:", env.sim.model.body_names)
+# # Plot rotation errors
+# axs[1].plot(rot_err_history, label="Rotation")
 
-
-# move above cubeA
-move_to_target(cubeA_main_id, 100, rotm_basic, APPROACH_DISTANCE)
-
-# move close to cubeA
-move_to_target(cubeA_main_id, 100, rotm_basic)
-
-# grasp cubeA
-grasp(cubeA_main_id, 10, rotm_basic, gripper = 1)
-
-# move above cubeA
-move_to_target(cubeA_main_id, 20, rotm_basic, APPROACH_DISTANCE, gripper = 1)
-
-# choose the grapper direction for B
-rotm_basic = get_rotm_basic_4B()
-
-# move above cubeB
-move_to_target(cubeB_main_id, 100, rotm_basic, APPROACH_DISTANCE, gripper = 1)
-
-# move close to cubeB
-move_to_target(cubeB_main_id, 100, rotm_basic, GRASP_HEIGHT, gripper = 1)
-
-#drop cubeA
-grasp(cubeB_main_id, 10, rotm_basic, GRASP_HEIGHT, gripper = -1)
-
-# move above
-move_to_target(cubeB_main_id, 30, rotm_basic, APPROACH_DISTANCE, gripper = -1)
+# axs[1].set_title("EEF Rotation Error")
+# axs[1].set_xlabel("Timestep")
+# axs[1].set_ylabel("Rotation Error (rad)")
+# axs[1].legend()
+# axs[1].grid(True)
 
 
-# # rollout 示例动作
-# for i in range(2000):
-#     action = env.action_space.sample()     # 随机动作，可替换为策略输出
-#     # obs, reward, done, info = env.step(action)
-#     result = env.step(action)
-#     print("Step result:", result)
-#     env.render()
+# plt.tight_layout()
+# plt.show()
+
+# input("Press enter to close")
+# # # rollout 示例动作
+# # for i in range(2000):
+# #     action = env.action_space.sample()     # 随机动作，可替换为策略输出
+# #     # obs, reward, done, info = env.step(action)
+# #     result = env.step(action)
+# #     print("Step result:", result)
+# #     env.render()

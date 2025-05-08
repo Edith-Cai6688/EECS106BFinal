@@ -9,6 +9,7 @@ from scipy.spatial.transform import Rotation as R
 import inspect
 import matplotlib.pyplot as plt
 root_folder = Path(__file__).parent.parent
+import os
 
 robot_name = "Sawyer"
 controller_path = "./new_config.json"
@@ -21,6 +22,9 @@ env = suite.make(
     controller_configs=controller_config,
     has_renderer=True,
     has_offscreen_renderer=True,
+    camera_names=["agentview"],
+    camera_heights=256,
+    camera_widths=256,
     use_camera_obs=True,
     control_freq=20,
     horizon=20000,
@@ -218,7 +222,10 @@ def rotvec_waypoints(start_rotm, goal_rotm, n_seg, eps=1e-8):
         for t in ts
     ]
 
-def move_to_target_constant_wp(body_id, steps_per_wp, rotm_basic, height_offset=0, gripper=-1, step_size=0.05):
+
+def move_to_target_constant_wp(body_id, steps_per_wp, rotm_basic, height_offset=0, gripper=-1, step_size=0.05, save_dir = "./save_trajs", traj_index = 0):
+    image_observations = []
+    actions_taken = []
     origin = env.sim.data.body_xpos[eef_id] - pos_base
     destination = get_pos(body_id)
     destination[2] += height_offset
@@ -230,6 +237,8 @@ def move_to_target_constant_wp(body_id, steps_per_wp, rotm_basic, height_offset=
         goal_rotm,
         n_seg=len(waypoints) - 1
     )
+    obs = env.reset()
+    image_observations.append(obs["agentview_image"])
     for wp_idx, (wp, rv_wp) in enumerate(zip(waypoints, rotvec_wps)):
         for step in range(steps_per_wp):
             if has_reached_target(wp, goal_rotm, epsilon_pos=0.0025, epsilon_rot=0.03):
@@ -255,6 +264,8 @@ def move_to_target_constant_wp(body_id, steps_per_wp, rotm_basic, height_offset=
             # print("action: ", action)
 
             obs, reward, done, info = env.step(action)
+            image_observations.append(obs["agentview_image"])
+            actions_taken.append(action.copy())
             # reward = compute_reward(np.concatenate([noisy_pos[0:2], [pos[2]]]), rotm)
             # print(f'------------\n {reward} \n ----------=')
             env.render()
@@ -266,7 +277,8 @@ def move_to_target_constant_wp(body_id, steps_per_wp, rotm_basic, height_offset=
         pos_error_vec_norm = np.linalg.norm(pos_error_vec)
         wp_offset_err.append(pos_error_vec_norm)
         print(f"OFF OF WAYPOINT BY {pos_error_vec_norm:4f}")
-    
+    np.savez_compressed(os.path.join(save_dir, f"traj{traj_index}.npz"), observations=np.array(image_observations), actions=np.array(actions_taken))
+    print(f"Saved: {save_dir}/traj{traj_index}.npz")
     # plt.figure(figsize=(8, 4))
     # plt.plot(wp_offset_err, marker='o')
     # plt.title("Miss distance at each waypoint")
@@ -274,6 +286,7 @@ def move_to_target_constant_wp(body_id, steps_per_wp, rotm_basic, height_offset=
     # plt.ylabel("Distance from waypoint (m)")
     # plt.grid(True)
     # plt.show()
+
 
 def move_to_target_linear(body_id, steps_per_wp, rotm_basic, height_offset=0, gripper=-1, n_wp = 10):
     origin = env.sim.data.body_xpos[eef_id] - pos_base
@@ -425,12 +438,38 @@ def bezier_waypoints(p0, p3, n=20, ctrl_offset=np.array([0, 0, 0.05])):
         wp.append((b0 * p0) + (b1 * p1) + (b2 * p2) + (b3 * p3))
     return wp
 
+def collect_multiple_image_trajectories(num_trajectories=40, save_dir="./dataset/train"):
+    os.makedirs(save_dir, exist_ok=True)
+
+    for i in range(num_trajectories):
+        print(f"\n=== Collecting Trajectory {i} ===")
+
+        # Reset environment and get rot matrix
+        obs = env.reset()
+        rotm_basic = get_rotm_basic_4A()
+
+        # Re-initialize cube/body positions if needed
+        # (Optional: randomize cube poses here for diversity)
+
+        move_to_target_constant_wp(
+            body_id=cubeA_main_id,
+            steps_per_wp=200,
+            rotm_basic=rotm_basic,
+            height_offset=APPROACH_DISTANCE,
+            step_size=0.05,
+            traj_index=i,
+            save_dir=save_dir
+        )
+
 # Move and place
 rotm_basic = get_rotm_basic_4A()
 
 
+collect_multiple_image_trajectories(num_trajectories=50)
+
+
 #Move above cubA
-move_to_target_constant_wp(cubeA_main_id, 200, rotm_basic, height_offset=APPROACH_DISTANCE, step_size = 0.05)
+# move_to_target_constant_wp(cubeA_main_id, 200, rotm_basic, height_offset=APPROACH_DISTANCE, step_size = 0.05)
 
 # #move close to cubeA
 # move_to_target_constant_wp(cubeA_main_id, 100, rotm_basic)

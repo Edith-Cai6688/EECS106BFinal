@@ -122,6 +122,7 @@ class GeometricImpedanceController(Controller):
         output_max=(0.05, 0.05, 0.05, 0.5, 0.5, 0.5),
         output_min=(-0.05, -0.05, -0.05, -0.5, -0.5, -0.5),
         kp=150,
+        ki=0,
         damping_ratio=1,
         impedance_mode="fixed",
         kp_limits=(0, 300),
@@ -174,6 +175,8 @@ class GeometricImpedanceController(Controller):
         # kp kd
         self.kp = self.nums2array(kp, 6)
         self.kd = 2 * np.sqrt(self.kp) * damping_ratio
+        self.ki = self.nums2array(ki, 6)
+        self.integral_error = np.zeros(6)
 
         # kp and kd limits
         self.kp_min = self.nums2array(kp_limits[0], 6)
@@ -398,35 +401,14 @@ class GeometricImpedanceController(Controller):
             raise NotImplementedError
         return goal_ori
 
+
     def run_controller(self):
-        """
-        Calculates the torques required to reach the desired setpoint.
-
-        Executes Operational Space Control (OSC) -- either position only or position and orientation.
-
-        A detailed overview of derivation of OSC equations can be seen at:
-        http://khatib.stanford.edu/publications/pdfs/Khatib_1987_RA.pdf
-
-        Returns:
-             np.array: Command torques
-        """
-        # Update state
         self.update()
 
-        # print("Running GIC Controller")
-
-        desired_world_pos = None
-        # Only linear interpolator is currently supported
-        if self.interpolator_pos is not None:
-            # Linear case
-            if self.interpolator_pos.order == 1:
-                desired_world_pos = self.interpolator_pos.get_interpolated_goal()
-            else:
-                # Nonlinear case not currently supported
-                pass
+        if self.interpolator_pos is not None and self.interpolator_pos.order == 1:
+            desired_world_pos = self.interpolator_pos.get_interpolated_goal()
         else:
             if self.input_ref_frame == "base":
-                # compute goal based on current base position and orientation
                 desired_world_pos = self.origin_pos + np.dot(self.origin_ori, self.goal_pos)
             elif self.input_ref_frame == "world":
                 desired_world_pos = self.goal_pos
@@ -434,42 +416,41 @@ class GeometricImpedanceController(Controller):
                 raise ValueError
 
         if self.interpolator_ori is not None:
-            # relative orientation based on difference between current ori and ref
             self.relative_ori = orientation_error(self.ref_ori_mat, self.ori_ref)
-
             ori_error = self.interpolator_ori.get_interpolated_goal()
+            desired_world_ori = Rotation.from_rotvec(ori_error).as_matrix() @ self.ori_ref
         else:
             if self.input_ref_frame == "base":
-                # compute goal based on current base orientation
                 desired_world_ori = np.dot(self.origin_ori, self.goal_ori)
             elif self.input_ref_frame == "world":
                 desired_world_ori = self.goal_ori
             else:
                 raise ValueError
-            ori_error = orientation_error(desired_world_ori, self.ref_ori_mat)
 
-        # desired_world_pos is p in my case
-        # desired_world_ori is R in my case
         pd = desired_world_pos
         Rd = desired_world_ori
         p = self.ref_pos
         R = self.ref_ori_mat
 
-        # Compute velocity in the base frame
         base_pos_vel = np.array(self.sim.data.get_site_xvelp(f"{self.naming_prefix}{self.part_name}_center"))
         base_ori_vel = np.array(self.sim.data.get_site_xvelr(f"{self.naming_prefix}{self.part_name}_center"))
+        Vb = np.concatenate([R.T @ (self.ref_pos_vel - base_pos_vel), R.T @ (self.ref_ori_vel - base_ori_vel)])
 
-        # Compute body-frame velocity
-        Vb = np.concatenate([R.T @ (self.ref_pos_vel - base_pos_vel), R.T @ (self.ref_ori_vel- base_ori_vel)])
+        pos_error = R.T @ (p - pd)
+        ori_error = vee_map(R.T @ Rd @ np.diag(self.kp[3:6]) - np.diag(self.kp[3:6]) @ Rd.T @ R)
 
-        # GIC Implementation
+        dt = 1.0 / self.control_freq
+        self.integral_error[:3] += pos_error * dt
+        self.integral_error[3:] += ori_error * dt
+        self.integral_error = np.clip(self.integral_error, -0.5, 0.5)
+
         Kp = np.diag(self.kp[0:3])
         KR = np.diag(self.kp[3:6])
         Kd = np.diag(self.kd)
+        Ki = np.diag(self.ki)
 
-
-        fp = R.T @ Rd @ Kp @ Rd.T @ (p - pd)
-        fR = vee_map(KR @ Rd.T @ R - R.T @ Rd @ KR)
+        fp = R.T @ Rd @ Kp @ Rd.T @ (p - pd) + Ki[:3, :3] @ self.integral_error[:3]
+        fR = vee_map(KR @ Rd.T @ R - R.T @ Rd @ KR) + Ki[3:, 3:] @ self.integral_error[3:]
 
         fg = np.concatenate([fp, fR])
 
@@ -477,35 +458,131 @@ class GeometricImpedanceController(Controller):
         J_pos_body = J_body[:3, :]
         J_ori_body = J_body[3:, :]
 
-        # Compute nullspace matrix (I - Jbar * J) and lambda matrices ((J * M^-1 * J^T)^-1)
         lambda_full, lambda_pos, lambda_ori, nullspace_matrix = opspace_matrices(
             self.mass_matrix, J_body, J_pos_body, J_ori_body
         )
 
-        # Unlike OSC, GIC does not consider decoupled torques
-        #NOTE(JS) but I just made J_pos_body and J_ori_body because I don't want to change the opspace_matrices function
-        desired_wrench = - fg - Kd @ (Vb)
+        desired_wrench = -fg - Kd @ Vb
         decoupled_wrench = np.dot(lambda_full, desired_wrench)
 
-        # print(decoupled_wrench + J_body @ self.torque_compensation)
-
-        # Gamma (without null torques) = J^T * F + gravity compensations
         self.torques = np.dot(J_body.T, decoupled_wrench) + self.torque_compensation
-        # Calculate and add nullspace torques (nullspace_matrix^T * Gamma_null) to final torques
-        # Note: Gamma_null = desired nullspace pose torques, assumed to be positional joint control relative
-        #                     to the initial joint positions
-
-        #NOTE(JS) Check with nullspace_torques
         self.torques += nullspace_torques(
             self.mass_matrix, nullspace_matrix, self.initial_joint, self.joint_pos, self.joint_vel
         )
 
-        # Always run superclass call for any cleanups at the end
         super().run_controller()
-
-        # print(self.torques)
-
         return self.torques
+
+
+
+    # def run_controller(self):
+    #     """
+    #     Calculates the torques required to reach the desired setpoint.
+
+    #     Executes Operational Space Control (OSC) -- either position only or position and orientation.
+
+    #     A detailed overview of derivation of OSC equations can be seen at:
+    #     http://khatib.stanford.edu/publications/pdfs/Khatib_1987_RA.pdf
+
+    #     Returns:
+    #          np.array: Command torques
+    #     """
+    #     # Update state
+    #     self.update()
+
+    #     # print("Running GIC Controller")
+
+    #     desired_world_pos = None
+    #     # Only linear interpolator is currently supported
+    #     if self.interpolator_pos is not None:
+    #         # Linear case
+    #         if self.interpolator_pos.order == 1:
+    #             desired_world_pos = self.interpolator_pos.get_interpolated_goal()
+    #         else:
+    #             # Nonlinear case not currently supported
+    #             pass
+    #     else:
+    #         if self.input_ref_frame == "base":
+    #             # compute goal based on current base position and orientation
+    #             desired_world_pos = self.origin_pos + np.dot(self.origin_ori, self.goal_pos)
+    #         elif self.input_ref_frame == "world":
+    #             desired_world_pos = self.goal_pos
+    #         else:
+    #             raise ValueError
+
+    #     if self.interpolator_ori is not None:
+    #         # relative orientation based on difference between current ori and ref
+    #         self.relative_ori = orientation_error(self.ref_ori_mat, self.ori_ref)
+
+    #         ori_error = self.interpolator_ori.get_interpolated_goal()
+    #     else:
+    #         if self.input_ref_frame == "base":
+    #             # compute goal based on current base orientation
+    #             desired_world_ori = np.dot(self.origin_ori, self.goal_ori)
+    #         elif self.input_ref_frame == "world":
+    #             desired_world_ori = self.goal_ori
+    #         else:
+    #             raise ValueError
+    #         ori_error = orientation_error(desired_world_ori, self.ref_ori_mat)
+
+    #     # desired_world_pos is p in my case
+    #     # desired_world_ori is R in my case
+    #     pd = desired_world_pos
+    #     Rd = desired_world_ori
+    #     p = self.ref_pos
+    #     R = self.ref_ori_mat
+
+    #     # Compute velocity in the base frame
+    #     base_pos_vel = np.array(self.sim.data.get_site_xvelp(f"{self.naming_prefix}{self.part_name}_center"))
+    #     base_ori_vel = np.array(self.sim.data.get_site_xvelr(f"{self.naming_prefix}{self.part_name}_center"))
+
+    #     # Compute body-frame velocity
+    #     Vb = np.concatenate([R.T @ (self.ref_pos_vel - base_pos_vel), R.T @ (self.ref_ori_vel- base_ori_vel)])
+
+    #     # GIC Implementation
+    #     Kp = np.diag(self.kp[0:3])
+    #     KR = np.diag(self.kp[3:6])
+    #     Kd = np.diag(self.kd)
+
+
+    #     fp = R.T @ Rd @ Kp @ Rd.T @ (p - pd)
+    #     fR = vee_map(KR @ Rd.T @ R - R.T @ Rd @ KR)
+
+    #     fg = np.concatenate([fp, fR])
+
+    #     J_body = np.block([[R.T, np.zeros((3, 3))], [np.zeros((3, 3)), R.T]]) @ self.J_full
+    #     J_pos_body = J_body[:3, :]
+    #     J_ori_body = J_body[3:, :]
+
+    #     # Compute nullspace matrix (I - Jbar * J) and lambda matrices ((J * M^-1 * J^T)^-1)
+    #     lambda_full, lambda_pos, lambda_ori, nullspace_matrix = opspace_matrices(
+    #         self.mass_matrix, J_body, J_pos_body, J_ori_body
+    #     )
+
+    #     # Unlike OSC, GIC does not consider decoupled torques
+    #     #NOTE(JS) but I just made J_pos_body and J_ori_body because I don't want to change the opspace_matrices function
+    #     desired_wrench = - fg - Kd @ (Vb)
+    #     decoupled_wrench = np.dot(lambda_full, desired_wrench)
+
+    #     # print(decoupled_wrench + J_body @ self.torque_compensation)
+
+    #     # Gamma (without null torques) = J^T * F + gravity compensations
+    #     self.torques = np.dot(J_body.T, decoupled_wrench) + self.torque_compensation
+    #     # Calculate and add nullspace torques (nullspace_matrix^T * Gamma_null) to final torques
+    #     # Note: Gamma_null = desired nullspace pose torques, assumed to be positional joint control relative
+    #     #                     to the initial joint positions
+
+    #     #NOTE(JS) Check with nullspace_torques
+    #     self.torques += nullspace_torques(
+    #         self.mass_matrix, nullspace_matrix, self.initial_joint, self.joint_pos, self.joint_vel
+    #     )
+
+    #     # Always run superclass call for any cleanups at the end
+    #     super().run_controller()
+
+    #     # print(self.torques)
+
+    #     return self.torques
 
     def update_origin(self, origin_pos, origin_ori):
         """
@@ -543,6 +620,8 @@ class GeometricImpedanceController(Controller):
 
         assert goal_update_mode in ["achieved", "desired"]
         self._goal_update_mode = goal_update_mode
+
+        self.integral_error = np.zeros(6)
 
         # Also reset interpolators if required
 

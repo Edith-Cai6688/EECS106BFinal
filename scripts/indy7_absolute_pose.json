@@ -4,9 +4,10 @@
         "arms": {
             "right": {
                 "type": "GIC_POSE",
-                "kp": 250,
-                "damping_ratio": 2.0,
-                "impedance_mode": "variable",
+                "kp": 150,
+                "ki": 2.5,
+                "damping_ratio": 2,
+                "impedance_mode": "fixed",
                 "kp_limits": [10, 300],
                 "damping_ratio_limits": [0, 10],
                 "position_limits": null,
@@ -15,7 +16,7 @@
                 "input_type": "absolute",
                 "input_ref_frame": "base",
                 "interpolation": null,
-                "ramp_ratio": 1,
+                "ramp_ratio": 0.2,
                 "gripper": {
                     "type": "GRIP"
                 }
